@@ -1,0 +1,45 @@
+# Logs
+logs/*.log
+*.log
+
+# SSL Certificates and Keys (sensitive)
+ssl/*.key
+ssl/*.crt
+ssl/*.csr
+ssl/*.srl
+ssl/ca.*
+
+# Configuration files with sensitive data
+config/settings.php
+# Keep settings.php.example instead
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# PHP
+vendor/
+composer.lock
+
+# Database dumps
+*.sql.bak
+*.dump
+
+# Environment files
+.env
+.env.local
+
