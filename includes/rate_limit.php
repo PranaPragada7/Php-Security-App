@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Rate Limiting Helper
  * Secure Web Application - Rate Limiting
@@ -9,8 +10,8 @@ require_once __DIR__ . '/../config/database.php';
 class RateLimiter {
     private $db;
     
-    public function __construct() {
-        $this->db = getDB();
+    public function __construct(?PDO $db = null) {
+        $this->db = $db ?? getDB();
         $this->initTable();
     }
     
@@ -40,18 +41,22 @@ class RateLimiter {
      * Get client IP address
      * @return string IP address
      */
-    private function getClientIp() {
-        $ip_keys = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_CLIENT_IP', 'REMOTE_ADDR'];
-        foreach ($ip_keys as $key) {
-            if (!empty($_SERVER[$key])) {
-                $ips = explode(',', $_SERVER[$key]);
-                $ip = trim($ips[0]);
-                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                    return $ip;
+    public function getClientIp(): string {
+        $remoteAddress = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+        if (!in_array($remoteAddress, TRUSTED_PROXIES, true)) {
+            return filter_var($remoteAddress, FILTER_VALIDATE_IP) ? $remoteAddress : '0.0.0.0';
+        }
+
+        foreach (['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP'] as $key) {
+            foreach (explode(',', (string) ($_SERVER[$key] ?? '')) as $candidate) {
+                $candidate = trim($candidate);
+                if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+                    return $candidate;
                 }
             }
         }
-        return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+        return filter_var($remoteAddress, FILTER_VALIDATE_IP) ? $remoteAddress : '0.0.0.0';
     }
     
     /**
@@ -138,12 +143,13 @@ class RateLimiter {
                 ];
             }
         } catch (PDOException $e) {
-            // On error, allow request (fail open for availability)
+            // Authentication throttling fails closed when persistence is unavailable.
             error_log("Rate limit check error: " . $e->getMessage());
             return [
-                'allowed' => true,
-                'remaining' => $max_attempts,
-                'reset_at' => time() + $window_seconds
+                'allowed' => false,
+                'remaining' => 0,
+                'reset_at' => time() + $window_seconds,
+                'available' => false,
             ];
         }
     }

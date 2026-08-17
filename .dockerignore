@@ -1,0 +1,7 @@
+.git
+.github
+.env
+config/settings.php
+logs
+ssl/*.key
+ssl/*.crt

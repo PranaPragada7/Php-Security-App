@@ -1,10 +1,11 @@
 <?php
+declare(strict_types=1);
 // Login page - User authentication entry point
 
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/csrf.php';
-require_once __DIR__ . '/includes/rate_limit.php';
 require_once __DIR__ . '/includes/validation.php';
+require_once __DIR__ . '/includes/api_client.php';
 
 if (isset($_SESSION['userid']) && isset($_SESSION['session_id']) && isset($_SESSION['token'])) {
     header('Location: dashboard.php');
@@ -31,46 +32,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
         } elseif (!$password_validation['valid']) {
             $error = $password_validation['error'];
         } else {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'https://localhost/api/login.php');
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-            'username' => $username,
-            'password' => $password
-        ]));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json',
-            'X-CSRF-Token: ' . csrf_token()
-        ]);
-        $verifyPeer = defined('SSL_VERIFY_PEER') ? (bool)SSL_VERIFY_PEER : true;
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verifyPeer);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
-        
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
-        if ($http_code === 200) {
-            $data = json_decode($response, true);
-            if ($data && isset($data['success']) && $data['success']) {
-                $_SESSION['userid'] = $data['user']['userid'];
-                $_SESSION['username'] = $data['user']['username'];
-                $_SESSION['session_id'] = $data['session_id'];
-                $_SESSION['token'] = $data['token'];
-                $_SESSION['user_name'] = $data['user']['name'];
-                $_SESSION['role'] = $data['user']['role'] ?? 'guest';
-                
-                header('Location: dashboard.php');
-                exit;
-            } else {
+            $result = api_request('POST', 'login.php', [
+                'username' => $username,
+                'password' => $password,
+            ]);
+            $http_code = $result['status'];
+            $data = $result['data'];
+
+            if ($http_code === 200) {
+                if ($data && isset($data['success']) && $data['success']) {
+                    session_regenerate_secure(true);
+                    $_SESSION['userid'] = $data['user']['userid'];
+                    $_SESSION['username'] = $data['user']['username'];
+                    $_SESSION['session_id'] = $data['session_id'];
+                    $_SESSION['token'] = $data['token'];
+                    $_SESSION['user_name'] = $data['user']['name'];
+                    $_SESSION['role'] = $data['user']['role'] ?? 'guest';
+
+                    header('Location: dashboard.php');
+                    exit;
+                }
+
                 $error = $data['error'] ?? 'Login failed';
+            } else {
+                $error = $data['error'] ?? 'Login failed. Please check your credentials.';
             }
-        } elseif ($http_code === 429) {
-            $error = 'Too many login attempts. Please try again later.';
-        } else {
-            $error = 'Login failed. Please check your credentials.';
-        }
         }
     }
 }
@@ -81,7 +67,7 @@ csrf_init(); // Ensure CSRF token is initialized for form
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In - Secure Portal</title>
+    <title>Sign In | CipherDesk</title>
     <style>
         :root {
             --primary: #0f172a;
@@ -256,13 +242,15 @@ csrf_init(); // Ensure CSRF token is initialized for form
             text-decoration: underline;
         }
     </style>
+    <link rel="stylesheet" href="assets/auth.css">
 </head>
 <body>
     <div class="login-container">
         <div class="logo-area">
-            <div class="logo-icon"></div>
-            <h1>Secure Portal</h1>
-            <p class="subtitle">Enterprise Data Management System</p>
+            <div class="brand-mark" aria-hidden="true">CD</div>
+            <p class="eyebrow">Access controlled</p>
+            <h1>Welcome to CipherDesk</h1>
+            <p class="subtitle">Sign in to the protected records workspace.</p>
         </div>
         
         <?php if ($error): ?>
@@ -293,8 +281,8 @@ csrf_init(); // Ensure CSRF token is initialized for form
         </div>
 
         <div class="security-notice">
-            <div><span class="lock-icon"></span> <strong>End-to-End Encrypted</strong></div>
-            <span>Protected by AES-256 Encryption & TLS 1.3</span>
+            <div><strong>Protected records</strong></div>
+            <span>AES-256 encryption, HMAC verification, and role-based access</span>
         </div>
     </div>
 </body>

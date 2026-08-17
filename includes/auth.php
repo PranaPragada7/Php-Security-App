@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Authentication Helper Functions
  * Secure Web Application - Authentication
@@ -53,14 +54,18 @@ class Auth {
         try {
             $session_id = bin2hex(random_bytes(32));
             $token = bin2hex(random_bytes(32));
+            $token_hash = hash('sha256', $token);
             $session_name = SESSION_NAME;
             $expires_at = date('Y-m-d H:i:s', time() + SESSION_LIFETIME);
+
+            $cleanup = $this->db->prepare('DELETE FROM sessions WHERE userid = ? OR expires_at <= NOW()');
+            $cleanup->execute([$userid]);
             
             $stmt = $this->db->prepare("
                 INSERT INTO sessions (session_id, userid, token, session_name, expires_at) 
                 VALUES (?, ?, ?, ?, ?)
             ");
-            $stmt->execute([$session_id, $userid, $token, $session_name, $expires_at]);
+            $stmt->execute([$session_id, $userid, $token_hash, $session_name, $expires_at]);
             
             return [
                 'session_id' => $session_id,
@@ -83,13 +88,14 @@ class Auth {
      */
     public function verifySession($session_id, $token) {
         try {
+            $token_hash = hash('sha256', (string) $token);
             $stmt = $this->db->prepare("
                 SELECT s.*, u.username, u.email, u.name, u.role 
                 FROM sessions s 
                 JOIN users u ON s.userid = u.userid 
                 WHERE s.session_id = ? AND s.token = ? AND s.expires_at > NOW()
             ");
-            $stmt->execute([$session_id, $token]);
+            $stmt->execute([$session_id, $token_hash]);
             $session = $stmt->fetch();
             
             if ($session) {
@@ -104,6 +110,14 @@ class Auth {
             error_log("Session verification error: " . $e->getMessage());
             return false;
         }
+    }
+
+    /**
+     * Revoke an application session immediately.
+     */
+    public function destroySession(string $session_id, int $userid): void {
+        $stmt = $this->db->prepare('DELETE FROM sessions WHERE session_id = ? AND userid = ?');
+        $stmt->execute([$session_id, $userid]);
     }
     
     /**

@@ -1,8 +1,11 @@
 <?php
+declare(strict_types=1);
 // Activity logs viewer (Admin only) - System audit trail with filtering
 
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/api_client.php';
+require_once __DIR__ . '/includes/logout.php';
 
 if (!isset($_SESSION['userid']) || !isset($_SESSION['session_id']) || !isset($_SESSION['token'])) {
     header('Location: index.php');
@@ -10,6 +13,12 @@ if (!isset($_SESSION['userid']) || !isset($_SESSION['session_id']) || !isset($_S
 }
 
 require_once __DIR__ . '/includes/rbac.php';
+
+if (isset($_GET['logout'])) {
+    logout_current_user();
+    header('Location: index.php');
+    exit;
+}
 
 $role = $_SESSION['role'] ?? 'guest';
 
@@ -47,46 +56,20 @@ $pagination = ['total' => 0, 'limit' => 100, 'offset' => 0, 'has_more' => false]
 $offset = isset($_GET['offset']) ? intval($_GET['offset']) : 0;
 $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 100;
 
-$ch = curl_init();
-$url = 'https://localhost/api/activity_logs.php';
-if ($filter_userid || $filter_activity_type || $offset || $limit != 100) {
-    $params = [];
-    if ($filter_userid) $params[] = 'userid=' . urlencode($filter_userid);
-    if ($filter_activity_type) $params[] = 'activity_type=' . urlencode($filter_activity_type);
-    if ($offset) $params[] = 'offset=' . urlencode($offset);
-    if ($limit != 100) $params[] = 'limit=' . urlencode($limit);
-    if (!empty($params)) {
-        $url .= '?' . implode('&', $params);
-    }
-}
-
-curl_setopt($ch, CURLOPT_URL, $url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'X-Session-ID: ' . $_SESSION['session_id'],
-    'X-Token: ' . $_SESSION['token'],
-    'X-CSRF-Token: ' . csrf_token()
+$result = api_request('GET', 'activity_logs.php', null, [
+    'userid' => $filter_userid,
+    'activity_type' => $filter_activity_type,
+    'offset' => max(0, $offset),
+    'limit' => min(100, max(1, $limit)),
 ]);
-$verifyPeer = defined('SSL_VERIFY_PEER') ? (bool)SSL_VERIFY_PEER : true;
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verifyPeer);
-curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
-
-$response = curl_exec($ch);
-$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+$http_code = $result['status'];
+$data = $result['data'];
 
 if ($http_code === 200) {
-    $data = json_decode($response, true);
     if ($data && isset($data['success']) && $data['success']) {
         $logs = $data['logs'] ?? [];
         $pagination = $data['pagination'] ?? $pagination;
     }
-}
-
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header('Location: index.php');
-    exit;
 }
 ?>
 <!DOCTYPE html>
@@ -94,7 +77,7 @@ if (isset($_GET['logout'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Audit Logs - Secure Portal</title>
+    <title>Audit Log | CipherDesk</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -107,7 +90,7 @@ if (isset($_GET['logout'])) {
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center">
                     <div class="flex-shrink-0 font-bold text-xl">
-                        Secure Portal
+                        CipherDesk
                     </div>
                     <div class="hidden md:block">
                         <div class="ml-10 flex items-baseline space-x-4">

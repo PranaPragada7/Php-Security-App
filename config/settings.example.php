@@ -1,78 +1,105 @@
 <?php
+declare(strict_types=1);
+
 /**
- * Database Configuration Settings - EXAMPLE FILE
- * Copy this file to settings.php and update with your configuration
- * Secure Web Application - Settings File
+ * Environment-backed settings.
+ *
+ * Copy this file to settings.php only when a local PHP configuration file is
+ * preferable to environment variables. Never commit production secrets.
  */
 
-// Database configuration array
+if (!function_exists('app_env')) {
+    function app_env(string $name, ?string $default = null): ?string
+    {
+        $value = getenv($name);
+        return $value === false ? $default : $value;
+    }
+}
+
+if (!function_exists('app_env_bool')) {
+    function app_env_bool(string $name, bool $default): bool
+    {
+        $value = app_env($name);
+        if ($value === null) {
+            return $default;
+        }
+
+        $parsed = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        return $parsed ?? $default;
+    }
+}
+
+if (!function_exists('define_app_constant')) {
+    function define_app_constant(string $name, mixed $value): void
+    {
+        if (!defined($name)) {
+            define($name, $value);
+        }
+    }
+}
+
+$environment = strtolower((string) app_env('APP_ENV', 'development'));
+if (!in_array($environment, ['development', 'test', 'production'], true)) {
+    throw new RuntimeException('APP_ENV must be development, test, or production.');
+}
+
+define_app_constant('APP_ENV', $environment);
+define_app_constant('APP_NAME', app_env('APP_NAME', 'CipherDesk'));
+define_app_constant('BASE_URL', rtrim((string) app_env('BASE_URL', 'http://127.0.0.1:8080'), '/'));
+define_app_constant('API_BASE_URL', rtrim((string) app_env('API_BASE_URL', BASE_URL . '/api'), '/'));
+define_app_constant('SESSION_NAME', app_env('SESSION_NAME', 'CIPHERDESK_SESSION'));
+define_app_constant('SESSION_LIFETIME', max(300, (int) app_env('SESSION_LIFETIME', '3600')));
+define_app_constant('HTTPS_ENABLED', app_env_bool('HTTPS_ENABLED', APP_ENV === 'production'));
+define_app_constant('SSL_VERIFY_PEER', app_env_bool('SSL_VERIFY_PEER', true));
+define_app_constant('RBAC_ENABLED', true);
+define_app_constant('ACTIVITY_LOGGING_ENABLED', app_env_bool('ACTIVITY_LOGGING_ENABLED', true));
+define_app_constant('ROOT_USERNAME', app_env('ROOT_USERNAME', 'admin'));
+$trustedProxies = array_values(array_filter(array_map(
+    'trim',
+    explode(',', (string) app_env('TRUSTED_PROXIES', ''))
+)));
+define_app_constant('TRUSTED_PROXIES', $trustedProxies);
+
+$developmentAesKey = hash('sha256', 'cipherdesk-development-aes-key');
+$developmentHmacKey = hash('sha256', 'cipherdesk-development-hmac-key');
+$aesKey = (string) app_env('AES_KEY', APP_ENV === 'production' ? '' : $developmentAesKey);
+$hmacKey = (string) app_env('HMAC_SECRET_KEY', APP_ENV === 'production' ? '' : $developmentHmacKey);
+
+foreach (['AES_KEY' => $aesKey, 'HMAC_SECRET_KEY' => $hmacKey] as $keyName => $keyValue) {
+    if (strlen($keyValue) !== 64 || !ctype_xdigit($keyValue)) {
+        throw new RuntimeException($keyName . ' must be a 64-character hexadecimal secret.');
+    }
+}
+
+define_app_constant('AES_KEY', strtolower($aesKey));
+define_app_constant('AES_METHOD', 'AES-256-CBC');
+define_app_constant('HMAC_SECRET_KEY', strtolower($hmacKey));
+
 $db_config = [
-    'host' => 'localhost',
-    'port' => '3306',
-    'database' => 'encryption_demo_server',
-    'username' => 'root',
-    'password' => '', // Set your MySQL password here
-    'charset' => 'utf8mb4'
+    'host' => app_env('DB_HOST', '127.0.0.1'),
+    'port' => app_env('DB_PORT', '3306'),
+    'database' => app_env('DB_DATABASE', 'cipherdesk'),
+    'username' => app_env('DB_USERNAME', 'cipherdesk'),
+    'password' => app_env('DB_PASSWORD', ''),
+    'charset' => 'utf8mb4',
 ];
 
-// Database connection string
-$dsn = "mysql:host={$db_config['host']};port={$db_config['port']};dbname={$db_config['database']};charset={$db_config['charset']}";
+$dsn = sprintf(
+    'mysql:host=%s;port=%s;dbname=%s;charset=%s',
+    $db_config['host'],
+    $db_config['port'],
+    $db_config['database'],
+    $db_config['charset']
+);
 
-// PDO options
 $pdo_options = [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     PDO::ATTR_EMULATE_PREPARES => false,
 ];
 
-// AES Encryption Key (32 bytes for AES-256)
-// Generate a secure random key using: php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
-// IMPORTANT: In production, store this in an environment variable or secure key management system
-// MUST CHANGE: Replace with your own secure random 64-character hex string
-define('AES_KEY', 'CHANGE_THIS_TO_RANDOM_64_HEX_CHARS'); // 64 hex chars = 32 bytes
-define('AES_METHOD', 'AES-256-CBC');
-
-// HMAC Secret Key (64 hex characters for SHA-256 HMAC)
-// Generate a secure random key using: php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
-// IMPORTANT: In production, store this in an environment variable or secure key management system
-// MUST CHANGE: Replace with your own secure random 64-character hex string
-define('HMAC_SECRET_KEY', 'CHANGE_THIS_TO_RANDOM_64_HEX_CHARS'); // 64 hex chars = 32 bytes
-
-// RBAC Configuration
-define('RBAC_ENABLED', true);
-
-// Activity Logging Configuration
-define('ACTIVITY_LOGGING_ENABLED', true);
-
-// Session configuration
-define('SESSION_LIFETIME', 3600); // 1 hour in seconds
-define('SESSION_NAME', 'SECURE_SESSION');
-
-// SSL/HTTPS configuration
-define('HTTPS_ENABLED', true);
-// SSL verification for outbound HTTPS requests (should be true in production)
-// Set to false only for development with self-signed certificates (not recommended)
-define('SSL_VERIFY_PEER', true);
-
-// Application base URL
-define('BASE_URL', 'https://localhost');
-define('API_BASE_URL', 'https://localhost/api');
-
-// Application environment
-// Set to 'production' to hide detailed errors from users
-// Set to 'development' to show detailed errors for debugging
-define('APP_ENV', 'development'); // Change to 'production' in production
-
-// Error reporting (based on environment)
-if (defined('APP_ENV') && APP_ENV === 'production') {
-    error_reporting(0);
-    ini_set('display_errors', 0);
-    ini_set('log_errors', 1);
-} else {
-    error_reporting(E_ALL);
-    ini_set('display_errors', 1);
-}
-
-// Timezone
-date_default_timezone_set('America/Chicago');
+date_default_timezone_set((string) app_env('APP_TIMEZONE', 'UTC'));
+error_reporting(E_ALL);
+ini_set('display_errors', APP_ENV === 'production' ? '0' : '1');
+ini_set('log_errors', '1');
 

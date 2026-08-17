@@ -1,17 +1,23 @@
 <?php
+declare(strict_types=1);
 /**
  * AES Encryption Class
  * Secure Web Application - AES-256 Encryption/Decryption
  */
 
-require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../config/bootstrap.php';
 
 class AES {
     private $key;
     private $method;
     
     public function __construct() {
-        $this->key = hex2bin(AES_KEY); // Convert hex string to binary
+        $key = hex2bin(AES_KEY);
+        if ($key === false || strlen($key) !== 32) {
+            throw new RuntimeException('AES_KEY must decode to exactly 32 bytes.');
+        }
+
+        $this->key = $key;
         $this->method = AES_METHOD;
     }
     
@@ -26,7 +32,7 @@ class AES {
         }
         
         $iv_length = openssl_cipher_iv_length($this->method);
-        $iv = openssl_random_pseudo_bytes($iv_length);
+        $iv = random_bytes($iv_length);
         
         $encrypted = openssl_encrypt($data, $this->method, $this->key, OPENSSL_RAW_DATA, $iv);
         
@@ -48,12 +54,15 @@ class AES {
             return '';
         }
         
-        $data = base64_decode($encrypted_data);
+        $data = base64_decode($encrypted_data, true);
         if ($data === false) {
             throw new Exception("Invalid encrypted data format");
         }
         
         $iv_length = openssl_cipher_iv_length($this->method);
+        if (strlen($data) <= $iv_length) {
+            throw new Exception('Encrypted data is truncated.');
+        }
         $iv = substr($data, 0, $iv_length);
         $encrypted = substr($data, $iv_length);
         
