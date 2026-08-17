@@ -20,13 +20,22 @@ function api_request(string $method, string $path, ?array $payload = null, array
         $url .= '?' . http_build_query($query);
     }
 
+    $csrfToken = csrf_token();
+    $sessionCookie = session_name() . '=' . session_id();
+
     $headers = [
         'Accept: application/json',
-        'X-CSRF-Token: ' . csrf_token(),
+        'X-CSRF-Token: ' . $csrfToken,
     ];
 
     if ($payload !== null) {
         $headers[] = 'Content-Type: application/json';
+    }
+
+    // Release PHP's file-session lock before the API opens the same session.
+    // Without this, a page calling its own API blocks until the cURL timeout.
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
     }
 
     $handle = curl_init($url);
@@ -38,7 +47,7 @@ function api_request(string $method, string $path, ?array $payload = null, array
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_SSL_VERIFYPEER => SSL_VERIFY_PEER,
         CURLOPT_SSL_VERIFYHOST => SSL_VERIFY_PEER ? 2 : 0,
-        CURLOPT_COOKIE => session_name() . '=' . session_id(),
+        CURLOPT_COOKIE => $sessionCookie,
     ]);
 
     if ($payload !== null) {
@@ -49,6 +58,10 @@ function api_request(string $method, string $path, ?array $payload = null, array
     $status = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
     $curlError = curl_error($handle);
     curl_close($handle);
+
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
 
     if ($body === false || $status === 0) {
         error_log('Internal API request failed: ' . $curlError);
