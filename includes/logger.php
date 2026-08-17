@@ -1,10 +1,12 @@
 <?php
+declare(strict_types=1);
 // Activity logger - Logs user actions and security events to database
 
-require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../config/bootstrap.php';
+require_once __DIR__ . '/../config/database.php';
 
 class ActivityLogger {
-    private $db;
+    private ?PDO $db = null;
 
     public function __construct() {
         $this->connect();
@@ -12,12 +14,12 @@ class ActivityLogger {
 
     private function connect() {
         try {
-            require_once __DIR__ . '/database.php';
             $this->db = getDB();
             $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
+        } catch (Throwable $e) {
             // Fail silently for logging
+            error_log('Activity logger unavailable: ' . $e->getMessage());
         }
     }
 
@@ -87,7 +89,15 @@ class ActivityLogger {
     }
 
     public function getActivityLogs($filters = [], $limit = 100, $offset = 0) {
-        if (!$this->db) return [];
+        $limit = min(100, max(1, (int) $limit));
+        $offset = max(0, (int) $offset);
+
+        if (!$this->db) {
+            return [
+                'logs' => [],
+                'pagination' => ['total' => 0, 'limit' => $limit, 'offset' => $offset, 'has_more' => false],
+            ];
+        }
         
         try {
             $query = "

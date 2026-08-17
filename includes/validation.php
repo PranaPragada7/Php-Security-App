@@ -42,8 +42,8 @@ class Validator {
             return ['valid' => false, 'error' => 'Password is required'];
         }
         
-        if (strlen($password) < 10) {
-            return ['valid' => false, 'error' => 'Password must be at least 10 characters'];
+        if (strlen($password) < 12) {
+            return ['valid' => false, 'error' => 'Password must be at least 12 characters'];
         }
         
         // Additional password strength checks (optional)

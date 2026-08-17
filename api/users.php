@@ -1,8 +1,9 @@
 <?php
+declare(strict_types=1);
 // Users API endpoint - User management (list, delete, change roles - root-only)
 
 header('Content-Type: application/json');
-require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
@@ -10,19 +11,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/rbac.php';
 require_once __DIR__ . '/../includes/logger.php';
 require_once __DIR__ . '/../includes/hmac.php';
-
-// Polyfill for getallheaders() if not available (e.g. FPM)
-if (!function_exists('getallheaders')) {
-    function getallheaders() {
-        $headers = [];
-        foreach ($_SERVER as $name => $value) {
-            if (substr($name, 0, 5) == 'HTTP_') {
-                $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
-            }
-        }
-        return $headers;
-    }
-}
+require_once __DIR__ . '/../includes/request_auth.php';
 
 // Verify session and role
 try {
@@ -31,20 +20,7 @@ try {
     $auth = new Auth($db);
     $logger = new ActivityLogger();
     
-    // Get headers
-    $headers = getallheaders();
-    
-    // Check for headers (case-insensitive handling by getallheaders polyfill or standard function)
-    $session_id = $headers['X-Session-ID'] ?? $headers['X-Session-Id'] ?? '';
-    $token = $headers['X-Token'] ?? '';
-    
-    if (empty($session_id) || empty($token)) {
-        http_response_code(401);
-        echo json_encode(['error' => 'Missing authentication headers']);
-        exit;
-    }
-    
-    $session = $auth->verifySession($session_id, $token);
+    $session = authenticated_request_user($auth);
     
     if (!$session) {
         http_response_code(401);
@@ -112,6 +88,11 @@ try {
         }
         
         $input = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid JSON input']);
+            exit;
+        }
         
         if (!isset($input['userid']) || !isset($input['role'])) {
             http_response_code(400);

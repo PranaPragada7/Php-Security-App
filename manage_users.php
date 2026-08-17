@@ -1,6 +1,7 @@
 <?php
+declare(strict_types=1);
 // User management page (Admin only) - List users, change roles (root-only), view HMAC integrity
-require_once __DIR__ . '/config/settings.php'; // Include settings to get ROOT_USERNAME
+require_once __DIR__ . '/config/bootstrap.php';
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/rbac.php';
@@ -11,16 +12,13 @@ if (!isset($_SESSION['userid']) || !isset($_SESSION['role']) || !RBAC::canManage
     exit;
 }
 
-// Pass session data to JS safely
-$session_id = $_SESSION['session_id'] ?? '';
-$token = $_SESSION['token'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage Users - Secure Web App</title>
+    <title>Manage Users | CipherDesk</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
@@ -30,7 +28,7 @@ $token = $_SESSION['token'] ?? '';
             <div class="flex justify-between items-center">
                 <div class="flex items-center space-x-4">
                     <i class="fas fa-shield-alt text-2xl text-emerald-400"></i>
-                    <span class="text-xl font-bold tracking-wider">SecureSys Admin</span>
+                    <span class="text-xl font-bold tracking-wider">CipherDesk Admin</span>
                 </div>
                 <div class="flex items-center space-x-6">
                     <span class="text-slate-300">
@@ -87,12 +85,11 @@ $token = $_SESSION['token'] ?? '';
     </div>
 
     <script>
-        const API_URL = 'https://localhost/api';
-        const SESSION_ID = "<?php echo htmlspecialchars($session_id, ENT_QUOTES, 'UTF-8'); ?>";
-        const SESSION_TOKEN = "<?php echo htmlspecialchars($token, ENT_QUOTES, 'UTF-8'); ?>";
+        const API_URL = 'api';
+        const CSRF_TOKEN = <?php echo json_encode(csrf_token(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
         const CURRENT_USER_ID = <?php echo intval($_SESSION['userid']); ?>;
-        const ROOT_USERNAME = "<?php echo defined('ROOT_USERNAME') ? htmlspecialchars(ROOT_USERNAME, ENT_QUOTES, 'UTF-8') : ''; ?>";
-        const CURRENT_USERNAME = "<?php echo htmlspecialchars($_SESSION['username'] ?? '', ENT_QUOTES, 'UTF-8'); ?>";
+        const ROOT_USERNAME = <?php echo json_encode(ROOT_USERNAME, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+        const CURRENT_USERNAME = <?php echo json_encode($_SESSION['username'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
         const IS_ROOT_USER = CURRENT_USERNAME === ROOT_USERNAME;
         
 
@@ -119,21 +116,20 @@ $token = $_SESSION['token'] ?? '';
                         changeUserRole(userid, username, newRole, oldRole, select);
                     }
                 });
+                tableContainer.addEventListener('click', function(event) {
+                    const button = event.target.closest('.delete-user-button');
+                    if (button) {
+                        deleteUser(button.dataset.userid, button.dataset.username);
+                    }
+                });
             }
         }
 
         async function fetchUsers() {
-            if (!SESSION_ID || !SESSION_TOKEN) {
-                window.location.href = 'index.php';
-                return;
-            }
-
             try {
                 const response = await fetch(`${API_URL}/users.php`, {
-                    headers: {
-                        'X-Session-ID': SESSION_ID,
-                        'X-Token': SESSION_TOKEN
-                    }
+                    credentials: 'same-origin',
+                    headers: {'Accept': 'application/json'}
                 });
 
                 if (response.status === 401 || response.status === 403) {
@@ -150,6 +146,16 @@ $token = $_SESSION['token'] ?? '';
                     <tr><td colspan="8" class="p-8 text-center text-red-500">Failed to load users. Please ensure the server is running.</td></tr>
                 `;
             }
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>'"]/g, character => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                "'": '&#39;',
+                '"': '&quot;'
+            })[character]);
         }
 
         function renderUsers(users) {
@@ -180,7 +186,7 @@ $token = $_SESSION['token'] ?? '';
                     // Root user can change this user's role (dropdown)
                     // Use data attributes for safe event handling (no inline JS with user data)
                     const roleSelectId = `role-select-${user.userid}`;
-                    const safeUsername = user.username.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const safeUsername = escapeHtml(user.username);
                     roleDisplay = `
                         <select id="${roleSelectId}" 
                             data-userid="${user.userid}"
@@ -194,7 +200,7 @@ $token = $_SESSION['token'] ?? '';
                     `;
                 } else {
                     // Read-only role badge
-                    roleDisplay = `<span class="px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wide ${roleColors[user.role] || 'bg-gray-100'}">${user.role}</span>`;
+                    roleDisplay = `<span class="px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wide ${roleColors[user.role] || 'bg-gray-100'}">${escapeHtml(user.role)}</span>`;
                 }
                 
                 // HMAC verification status
@@ -230,8 +236,8 @@ $token = $_SESSION['token'] ?? '';
                      actionButton = `<span class="px-2 py-1 rounded text-xs font-bold bg-amber-100 text-amber-800">ROOT</span>`;
                 } else if (user.userid != CURRENT_USER_ID) {
                     actionButton = `
-                        <button onclick="deleteUser(${user.userid}, '${user.username}')" 
-                            class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded transition-all"
+                        <button type="button" data-userid="${Number(user.userid)}" data-username="${escapeHtml(user.username)}"
+                            class="delete-user-button text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded transition-all"
                             title="Delete User">
                             <i class="fas fa-trash-alt"></i>
                         </button>
@@ -243,9 +249,9 @@ $token = $_SESSION['token'] ?? '';
                 return `
                     <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                         <td class="p-4 font-mono text-sm text-slate-500">#${user.userid}</td>
-                        <td class="p-4 font-medium text-slate-800">${user.username}</td>
-                        <td class="p-4">${user.name}</td>
-                        <td class="p-4 text-slate-500">${user.email}</td>
+                        <td class="p-4 font-medium text-slate-800">${escapeHtml(user.username)}</td>
+                        <td class="p-4">${escapeHtml(user.name)}</td>
+                        <td class="p-4 text-slate-500">${escapeHtml(user.email)}</td>
                         <td class="p-4">${roleDisplay}</td>
                         <td class="p-4">${hmacBadge}</td>
                         <td class="p-4 text-sm text-slate-500">${new Date(user.created_at).toLocaleString()}</td>
@@ -309,9 +315,10 @@ $token = $_SESSION['token'] ?? '';
             try {
                 const response = await fetch(`${API_URL}/users.php?id=${userid}`, {
                     method: 'DELETE',
+                    credentials: 'same-origin',
                     headers: {
-                        'X-Session-ID': SESSION_ID,
-                        'X-Token': SESSION_TOKEN
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': CSRF_TOKEN
                     }
                 });
 
@@ -339,10 +346,11 @@ $token = $_SESSION['token'] ?? '';
             try {
                 const response = await fetch(`${API_URL}/users.php`, {
                     method: 'PUT',
+                    credentials: 'same-origin',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Session-ID': SESSION_ID,
-                        'X-Token': SESSION_TOKEN
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': CSRF_TOKEN
                     },
                     body: JSON.stringify({
                         userid: userid,
@@ -391,7 +399,7 @@ $token = $_SESSION['token'] ?? '';
             msgDiv.innerHTML = `
                 <div class="flex items-center">
                     <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} mr-2"></i>
-                    <span>${message}</span>
+                    <span>${escapeHtml(message)}</span>
                     <button onclick="this.parentElement.parentElement.remove()" class="ml-auto text-gray-400 hover:text-gray-600">
                         <i class="fas fa-times"></i>
                     </button>
@@ -413,9 +421,6 @@ $token = $_SESSION['token'] ?? '';
         }
 
         function logout() {
-            // Note: In PHP session based auth, we should ideally call a logout endpoint.
-            // But since this is a simple implementation, we just redirect with a flag that dashboard.php handles (or create a logout.php)
-            // dashboard.php has a check for ?logout=1
             window.location.href = 'dashboard.php?logout=1';
         }
     </script>

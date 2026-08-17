@@ -1,0 +1,150 @@
+:root {
+    color-scheme: dark;
+    --auth-bg: #07111f;
+    --auth-panel: rgba(10, 24, 41, 0.92);
+    --auth-border: rgba(94, 234, 212, 0.24);
+    --auth-accent: #5eead4;
+    --auth-accent-strong: #2dd4bf;
+    --auth-copy: #dbeafe;
+    --auth-muted: #8fa6bf;
+}
+body {
+    position: relative;
+    overflow-x: hidden;
+    background:
+        radial-gradient(circle at 18% 20%, rgba(20, 184, 166, 0.16), transparent 30rem),
+        radial-gradient(circle at 85% 75%, rgba(37, 99, 235, 0.13), transparent 32rem),
+        var(--auth-bg) !important;
+    color: var(--auth-copy) !important;
+}
+
+body::before {
+    position: fixed;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+    background-size: 38px 38px;
+    mask-image: linear-gradient(to bottom, black, transparent 85%);
+}
+
+.login-container,
+.register-container {
+    position: relative;
+    z-index: 1;
+    padding: 42px !important;
+    border: 1px solid var(--auth-border) !important;
+    border-radius: 24px !important;
+    background: var(--auth-panel) !important;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45) !important;
+    backdrop-filter: blur(18px);
+}
+
+.login-container::before,
+.register-container::before {
+    position: absolute;
+    top: 0;
+    right: 32px;
+    left: 32px;
+    height: 1px;
+    content: "";
+    background: linear-gradient(90deg, transparent, var(--auth-accent), transparent);
+}
+
+.brand-mark {
+    display: grid;
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 18px;
+    border: 1px solid rgba(94, 234, 212, 0.45);
+    border-radius: 16px;
+    background: rgba(20, 184, 166, 0.1);
+    color: var(--auth-accent);
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    place-items: center;
+    box-shadow: inset 0 0 24px rgba(45, 212, 191, 0.08);
+}
+
+.eyebrow {
+    margin-bottom: 10px;
+    color: var(--auth-accent) !important;
+    font-size: 11px !important;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+h1,
+label {
+    color: #f8fafc !important;
+}
+
+h1 {
+    font-size: 28px !important;
+    letter-spacing: -0.03em;
+}
+
+.subtitle,
+.login-link,
+.role-description,
+.security-notice {
+    color: var(--auth-muted) !important;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+select {
+    border-color: rgba(148, 163, 184, 0.2) !important;
+    background: rgba(3, 12, 24, 0.78) !important;
+    color: #eff6ff !important;
+}
+
+input::placeholder {
+    color: #52677d;
+}
+
+input:focus,
+select:focus {
+    border-color: var(--auth-accent-strong) !important;
+    background: rgba(3, 12, 24, 0.96) !important;
+    box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14) !important;
+}
+
+.btn {
+    min-height: 48px;
+    background: linear-gradient(135deg, #14b8a6, #0f766e) !important;
+    color: #021713 !important;
+    font-weight: 800 !important;
+    box-shadow: 0 12px 30px rgba(20, 184, 166, 0.2);
+}
+
+.btn:hover {
+    background: linear-gradient(135deg, #5eead4, #14b8a6) !important;
+}
+
+.login-link a {
+    color: var(--auth-accent) !important;
+}
+
+.security-notice {
+    border-color: rgba(94, 234, 212, 0.15) !important;
+    background: rgba(15, 118, 110, 0.08) !important;
+}
+
+.error,
+.success {
+    text-align: left;
+}
+
+@media (max-width: 540px) {
+    .login-container,
+    .register-container {
+        padding: 30px 24px !important;
+        border-radius: 18px !important;
+    }
+}

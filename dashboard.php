@@ -1,8 +1,11 @@
 <?php
+declare(strict_types=1);
 // User dashboard - Main application interface with job submission and role-based data viewing
 
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/api_client.php';
+require_once __DIR__ . '/includes/logout.php';
 
 if (!isset($_SESSION['userid']) || !isset($_SESSION['session_id']) || !isset($_SESSION['token'])) {
     header('Location: index.php');
@@ -10,6 +13,12 @@ if (!isset($_SESSION['userid']) || !isset($_SESSION['session_id']) || !isset($_S
 }
 
 require_once __DIR__ . '/includes/rbac.php';
+
+if (isset($_GET['logout'])) {
+    logout_current_user();
+    header('Location: index.php');
+    exit;
+}
 
 $error = '';
 $success = '';
@@ -29,33 +38,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_job'])) {
         if (empty($job_name) || empty($opn_number)) {
             $error = 'Please enter both job name and OPN number';
         } else {
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, 'https://localhost/api/jobs.php');
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+            $result = api_request('POST', 'jobs.php', [
                 'job_name' => $job_name,
                 'opn_number' => $opn_number,
-                'clear_text_data' => $clear_text_data
-            ]));
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'X-Session-ID: ' . $_SESSION['session_id'],
-                'X-Token: ' . $_SESSION['token'],
-                'X-CSRF-Token: ' . csrf_token()
+                'clear_text_data' => $clear_text_data,
             ]);
-            $verifyPeer = defined('SSL_VERIFY_PEER') ? (bool)SSL_VERIFY_PEER : true;
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verifyPeer);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
-            
-            $response = curl_exec($ch);
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            $http_code = $result['status'];
+            $data = $result['data'];
             
             if ($http_code === 201) {
-                $data = json_decode($response, true);
                 if ($data && isset($data['success']) && $data['success']) {
-                    $success = 'Job submitted successfully! HMAC generated.';
+                    $success = 'Record encrypted and stored successfully.';
                     $_POST['job_name'] = '';
                     $_POST['opn_number'] = '';
                     $_POST['clear_text_data'] = '';
@@ -63,7 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_job'])) {
                     $error = $data['error'] ?? 'Failed to submit job';
                 }
             } else {
-                $data = json_decode($response, true);
                 $error = $data['error'] ?? 'Failed to submit job. Please try again.';
             }
         }
@@ -72,34 +64,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_job'])) {
 
 $jobs = [];
 if (RBAC::canViewPlaintext($role)) {
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, 'https://localhost/api/jobs.php');
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'X-Session-ID: ' . $_SESSION['session_id'],
-        'X-Token: ' . $_SESSION['token'],
-        'X-CSRF-Token: ' . csrf_token()
-    ]);
-    $verifyPeer = defined('SSL_VERIFY_PEER') ? (bool)SSL_VERIFY_PEER : true;
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verifyPeer);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
-    
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    $result = api_request('GET', 'jobs.php');
+    $http_code = $result['status'];
+    $data = $result['data'];
     
     if ($http_code === 200) {
-        $data = json_decode($response, true);
         if ($data && isset($data['success']) && $data['success']) {
             $jobs = $data['jobs'] ?? [];
         }
     }
-}
-
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header('Location: index.php');
-    exit;
 }
 
 $roleBadgeColors = [
@@ -114,7 +87,7 @@ $roleBadgeClass = $roleBadgeColors[$role] ?? 'bg-gray-100 text-gray-800';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Secure Portal</title>
+    <title>Dashboard | CipherDesk</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -136,7 +109,7 @@ $roleBadgeClass = $roleBadgeColors[$role] ?? 'bg-gray-100 text-gray-800';
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center">
                     <div class="flex-shrink-0 font-bold text-xl">
-                        Secure Portal
+                        CipherDesk
                     </div>
                     <div class="hidden md:block">
                         <div class="ml-10 flex items-baseline space-x-4">
@@ -436,11 +409,9 @@ $roleBadgeClass = $roleBadgeColors[$role] ?? 'bg-gray-100 text-gray-800';
             
             try {
                 // Check integrity
-                const response = await fetch('https://localhost/api/integrity_check.php', {
-                    headers: {
-                        'X-Session-ID': '<?php echo $_SESSION['session_id']; ?>',
-                        'X-Token': '<?php echo $_SESSION['token']; ?>'
-                    }
+                const response = await fetch('api/integrity_check.php', {
+                    credentials: 'same-origin',
+                    headers: {'Accept': 'application/json'}
                 });
                 
                 if (response.ok) {

@@ -1,25 +1,14 @@
 <?php
+declare(strict_types=1);
 // Integrity check API endpoint (Admin only) - Verifies HMAC integrity for all jobs
 
 header('Content-Type: application/json');
-require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/rbac.php';
 require_once __DIR__ . '/../includes/hmac.php';
 require_once __DIR__ . '/../includes/crypt.php';
-
-// Polyfill for getallheaders
-if (!function_exists('getallheaders')) {
-    function getallheaders() {
-        $headers = [];
-        foreach ($_SERVER as $name => $value) {
-            if (substr($name, 0, 5) == 'HTTP_') {
-                $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
-            }
-        }
-        return $headers;
-    }
-}
+require_once __DIR__ . '/../includes/request_auth.php';
 
 try {
     require_once __DIR__ . '/../config/database.php';
@@ -27,11 +16,7 @@ try {
     $auth = new Auth($db);
     
     // Auth Check
-    $headers = getallheaders();
-    $session_id = $headers['X-Session-ID'] ?? $headers['X-Session-Id'] ?? '';
-    $token = $headers['X-Token'] ?? '';
-    
-    $session = $auth->verifySession($session_id, $token);
+    $session = authenticated_request_user($auth);
     if (!$session || !RBAC::canViewSensitiveData($session['role'] ?? 'guest')) { // Only admins/privileged users
         http_response_code(403);
         echo json_encode(['error' => 'Unauthorized']);
@@ -88,7 +73,8 @@ try {
     ]);
 
 } catch (Exception $e) {
+    error_log('Integrity check failed: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
+    echo json_encode(['error' => 'Integrity verification is temporarily unavailable.']);
 }
 

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // Registration API endpoint - Creates new user accounts with password hashing and HMAC
 
 header('Content-Type: application/json');
@@ -6,18 +7,39 @@ header('Content-Type: application/json');
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
-require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/session.php';
+require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/rbac.php';
 require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/rate_limit.php';
+require_once __DIR__ . '/../includes/validation.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_validate_request()) {
+        http_response_code(403);
+        echo json_encode(['error' => 'CSRF token validation failed']);
+        exit;
+    }
+
     $input = json_decode(file_get_contents('php://input'), true);
     
     if (json_last_error() !== JSON_ERROR_NONE) {
         http_response_code(400);
         echo json_encode(['error' => 'Invalid JSON input']);
+        exit;
+    }
+
+    $rateLimiter = new RateLimiter();
+    $rateLimit = $rateLimiter->checkLimit('register', 3, 600);
+    if (!$rateLimit['allowed']) {
+        $available = $rateLimit['available'] ?? true;
+        http_response_code($available ? 429 : 503);
+        echo json_encode(['error' => $available
+            ? 'Too many registration attempts. Please try again later.'
+            : 'Registration is temporarily unavailable.']);
         exit;
     }
 
@@ -31,14 +53,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($input['username']);
     $password = $input['password'];
     // Auto-generate email if not provided (email field removed from UI but DB requires it)
-    $email = isset($input['email']) ? trim($input['email']) : $username . '@secure-internal.local';
+    $email = isset($input['email']) ? trim($input['email']) : $username . '@example.test';
     $name = trim($input['name']);
-    $role = isset($input['role']) && RBAC::isValidRole($input['role']) ? $input['role'] : RBAC::getDefaultRole();
+    // Public registration never accepts a privileged role from the client.
+    $role = RBAC::ROLE_USER;
+
+    foreach ([
+        Validator::validateUsername($username),
+        Validator::validatePassword($password),
+        Validator::validateName($name),
+        Validator::validateEmail($email),
+    ] as $validation) {
+        if (!$validation['valid']) {
+            http_response_code(400);
+            echo json_encode(['error' => $validation['error']]);
+            exit;
+        }
+    }
 
     try {
         $db = getDB();
         
-        // Check if username exists MANUALLY first to debug
+        // Return a clear conflict response before attempting the insert.
         $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
         $stmt->execute([$username]);
         if ($stmt->fetchColumn() > 0) {

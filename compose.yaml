@@ -1,0 +1,44 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      APP_ENV: development
+      BASE_URL: http://localhost:8080
+      API_BASE_URL: http://127.0.0.1/api
+      DB_HOST: database
+      DB_DATABASE: cipherdesk
+      DB_USERNAME: cipherdesk
+      DB_PASSWORD: ${DB_PASSWORD:-cipherdesk-local}
+      AES_KEY: ${AES_KEY:-03f1886191836085f39267511e2ee5de349367f40a04ec3413fe21bbb7847e53}
+      HMAC_SECRET_KEY: ${HMAC_SECRET_KEY:-6db5d53351791bb7199073d9f044f2fa7a3caf37bf7c914b0a35d8032fcf30e3}
+      ROOT_USERNAME: ${ROOT_USERNAME:-admin}
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1/api/health.php"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  database:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: cipherdesk
+      MYSQL_USER: cipherdesk
+      MYSQL_PASSWORD: ${DB_PASSWORD:-cipherdesk-local}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-local}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - cipherdesk-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  cipherdesk-data:

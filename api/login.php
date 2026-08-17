@@ -1,8 +1,9 @@
 <?php
+declare(strict_types=1);
 // Login API endpoint - Authenticates users and creates sessions
 
 header('Content-Type: application/json');
-require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
@@ -21,6 +22,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid JSON input']);
+        exit;
+    }
     
     if (!isset($input['username']) || !isset($input['password'])) {
         http_response_code(400);
@@ -33,8 +39,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rateLimit = $rateLimiter->checkLimit('login', 5, 600); // 5 attempts per 10 minutes
     
     if (!$rateLimit['allowed']) {
-        http_response_code(429);
-        echo json_encode(['error' => 'Too many login attempts. Please try again later.']);
+        $available = $rateLimit['available'] ?? true;
+        http_response_code($available ? 429 : 503);
+        echo json_encode(['error' => $available
+            ? 'Too many login attempts. Please try again later.'
+            : 'Authentication is temporarily unavailable.']);
         exit;
     }
 
@@ -69,12 +78,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Regenerate session ID for security
             session_regenerate_secure(true);
+
+            $role = $user['role'] ?? RBAC::ROLE_GUEST;
+
+            // Keep application credentials server-side for same-origin API calls.
+            $_SESSION['userid'] = (int) $user['userid'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['user_name'] = $user['name'];
+            $_SESSION['role'] = $role;
+            $_SESSION['session_id'] = $session_data['session_id'];
+            $_SESSION['token'] = $session_data['token'];
             
             // Log successful login
             $logger->logLogin($user['userid'], $user['username']);
             
             // Get role permissions
-            $role = $user['role'] ?? RBAC::ROLE_GUEST;
             $permissions = RBAC::getRolePermissions($role);
             
             echo json_encode([

@@ -1,10 +1,11 @@
 <?php
+declare(strict_types=1);
 // Registration page - New user account creation
 
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/csrf.php';
-require_once __DIR__ . '/includes/rate_limit.php';
 require_once __DIR__ . '/includes/validation.php';
+require_once __DIR__ . '/includes/api_client.php';
 
 if (isset($_SESSION['userid']) && isset($_SESSION['session_id']) && isset($_SESSION['token'])) {
     header('Location: dashboard.php');
@@ -19,74 +20,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
     if (!csrf_validate_request()) {
         $error = 'Security token validation failed. Please try again.';
     } else {
-        // Check rate limit
-        $rateLimiter = new RateLimiter();
-        $rateLimit = $rateLimiter->checkLimit('register', 3, 600); // 3 attempts per 10 minutes
-        
-        if (!$rateLimit['allowed']) {
-            $error = 'Too many registration attempts. Please try again later.';
+        $username = $_POST['username'] ?? '';
+        $password = $_POST['password'] ?? '';
+        $name = $_POST['name'] ?? '';
+
+        // Validate input
+        $username_validation = Validator::validateUsername($username);
+        $password_validation = Validator::validatePassword($password);
+        $name_validation = Validator::validateName($name);
+
+        if (!$username_validation['valid']) {
+            $error = $username_validation['error'];
+        } elseif (!$password_validation['valid']) {
+            $error = $password_validation['error'];
+        } elseif (!$name_validation['valid']) {
+            $error = $name_validation['error'];
         } else {
-            $username = $_POST['username'] ?? '';
-            $password = $_POST['password'] ?? '';
-            $name = $_POST['name'] ?? '';
-            $role = $_POST['role'] ?? 'guest';
-            
-            // Validate input
-            $username_validation = Validator::validateUsername($username);
-            $password_validation = Validator::validatePassword($password);
-            $name_validation = Validator::validateName($name);
-            
-            if (!$username_validation['valid']) {
-                $error = $username_validation['error'];
-            } elseif (!$password_validation['valid']) {
-                $error = $password_validation['error'];
-            } elseif (!$name_validation['valid']) {
-                $error = $name_validation['error'];
+            $result = api_request('POST', 'register.php', [
+                'username' => $username,
+                'password' => $password,
+                'name' => $name,
+            ]);
+            $http_code = $result['status'];
+            $data = $result['data'];
+
+            if ($http_code === 201) {
+                if ($data && isset($data['success']) && $data['success']) {
+                    $success = 'Account created successfully. You can now sign in.';
+                } else {
+                    $error = $data['error'] ?? 'Registration failed';
+                }
             } else {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'https://localhost/api/register.php');
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-            'username' => $username,
-            'password' => $password,
-            'name' => $name,
-            'role' => $role
-        ]));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        // Capture headers to check for 500 errors
-        curl_setopt($ch, CURLOPT_HEADER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json',
-            'X-CSRF-Token: ' . csrf_token()
-        ]);
-        $verifyPeer = defined('SSL_VERIFY_PEER') ? (bool)SSL_VERIFY_PEER : true;
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verifyPeer);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
-        
-        $response_raw = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-        curl_close($ch);
-        
-        // Split header and body
-        $header = substr($response_raw, 0, $header_size);
-        $body = substr($response_raw, $header_size);
-        
-        if ($http_code === 201) {
-            $data = json_decode($body, true);
-            if ($data && isset($data['success']) && $data['success']) {
-                $success = 'Account created successfully. Redirecting...';
-                header("refresh:2;url=index.php");
-            } else {
-                $error = $data['error'] ?? 'Registration failed';
-            }
-        } elseif ($http_code === 429) {
-            $error = 'Too many registration attempts. Please try again later.';
-        } else {
-            $data = json_decode($body, true);
-            // Force display the raw error if JSON decode fails
-            $error = $data['error'] ?? "Server Error ($http_code): " . htmlspecialchars(substr($body, 0, 200));
-        }
+                $error = $data['error'] ?? 'Registration failed. Please try again.';
             }
         }
     }
@@ -98,7 +63,7 @@ csrf_init(); // Ensure CSRF token is initialized for form
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Account - Secure Portal</title>
+    <title>Create Account | CipherDesk</title>
     <style>
         :root {
             --primary: #0f172a;
@@ -249,16 +214,19 @@ csrf_init(); // Ensure CSRF token is initialized for form
             display: block;
         }
     </style>
+    <link rel="stylesheet" href="assets/auth.css">
 </head>
 <body>
     <div class="register-container">
         <div class="header">
-            <h1>Create Account</h1>
-            <p class="subtitle">Join the secure enterprise platform</p>
+            <div class="brand-mark" aria-hidden="true">CD</div>
+            <p class="eyebrow">Standard access</p>
+            <h1>Create your account</h1>
+            <p class="subtitle">New accounts receive the standard user role.</p>
         </div>
         
         <?php if ($error): ?>
-            <div class="error">Error: <?php echo $error; ?></div>
+            <div class="error">Error: <?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
         
         <?php if ($success): ?>
@@ -275,16 +243,6 @@ csrf_init(); // Ensure CSRF token is initialized for form
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="username" required value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" placeholder="jdoe">
-            </div>
-            
-            <div class="form-group">
-                <label for="role">Role</label>
-                <select id="role" name="role" required>
-                    <option value="guest">Guest (Limited View)</option>
-                    <option value="user">User (Standard Access)</option>
-                    <option value="admin">Admin (Full Access)</option>
-                </select>
-                <span class="role-description">Select your permission level for the demo.</span>
             </div>
             
             <div class="form-group">

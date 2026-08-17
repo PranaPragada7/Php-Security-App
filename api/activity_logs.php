@@ -1,23 +1,21 @@
 <?php
+declare(strict_types=1);
 // Activity logs API endpoint (Admin only) - Retrieves filtered audit logs
 
 header('Content-Type: application/json');
-require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/rbac.php';
 require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/request_auth.php';
 
 $db = getDB();
 $auth = new Auth($db);
 $logger = new ActivityLogger();
 
 // Verify session
-$headers = getallheaders();
-$session_id = $headers['X-Session-ID'] ?? '';
-$token = $headers['X-Token'] ?? '';
-
-$user = $auth->verifySession($session_id, $token);
+$user = authenticated_request_user($auth);
 if (!$user) {
     http_response_code(401);
     echo json_encode(['error' => 'Unauthorized']);
@@ -56,8 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         'activity_type' => $activity_type
     ];
     
-    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
-    $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
+    $limit = min(100, max(1, isset($_GET['limit']) ? (int) $_GET['limit'] : 100));
+    $offset = max(0, isset($_GET['offset']) ? (int) $_GET['offset'] : 0);
     
     $result = $logger->getActivityLogs($filters, $limit, $offset);
     

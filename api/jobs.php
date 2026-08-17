@@ -1,8 +1,9 @@
 <?php
+declare(strict_types=1);
 // Job management API endpoint - Handles job submission (with AES encryption) and retrieval (with role-based filtering)
 
 header('Content-Type: application/json');
-require_once __DIR__ . '/../config/settings.php';
+require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
@@ -12,19 +13,15 @@ require_once __DIR__ . '/../includes/rbac.php';
 require_once __DIR__ . '/../includes/hmac.php';
 require_once __DIR__ . '/../includes/logger.php';
 require_once __DIR__ . '/../includes/validation.php';
+require_once __DIR__ . '/../includes/request_auth.php';
 
 // Initialize
 $db = getDB();
 $auth = new Auth($db);
 $logger = new ActivityLogger();
 
-// Get headers
-$headers = getallheaders();
-$session_id = $headers['X-Session-ID'] ?? '';
-$token = $headers['X-Token'] ?? '';
-
 // Verify session
-$user = $auth->verifySession($session_id, $token);
+$user = authenticated_request_user($auth);
 if (!$user) {
     http_response_code(401);
     echo json_encode(['error' => 'Unauthorized']);
@@ -44,6 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid JSON input']);
+        exit;
+    }
     
     // RBAC Check
     if (!RBAC::canSubmitJobs($role)) {
@@ -105,7 +107,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode([
             'success' => true, 
             'jobid' => $jobid,
-            'hmac' => $data_hmac // Return HMAC for verification
         ]);
     } catch (PDOException $e) {
         http_response_code(500);
@@ -139,12 +140,16 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $stmt = $db->prepare($query);
         $stmt->execute($params);
         $jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        //The HMAC Check and which job is failing and the name of the job
         // Process data based on permissions
         foreach ($jobs as &$job) {
-            // Verify HMAC integrity
-            $decrypted_opn = AES::_decrypt($job['opn_number_encrypted']);
-            $isValid = HMAC::verifyJob($job['job_name'], $decrypted_opn, $job['data_hmac']);
+            try {
+                $decrypted_opn = AES::_decrypt($job['opn_number_encrypted']);
+                $isValid = HMAC::verifyJob($job['job_name'], $decrypted_opn, $job['data_hmac']);
+            } catch (Throwable $error) {
+                error_log('Job integrity verification failed: ' . $error->getMessage());
+                $decrypted_opn = '';
+                $isValid = false;
+            }
             
             // Add verification status for all roles that can view encrypted data
             if (RBAC::canViewEncrypted($role)) {
@@ -158,9 +163,11 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
 
             // Handle sensitive data visibility
-            if (RBAC::canViewSensitiveData($role)) {
+            if (RBAC::canViewSensitiveData($role) && $isValid) {
                 // Admin sees everything
                 $job['opn_number'] = $decrypted_opn;
+            } elseif (RBAC::canViewSensitiveData($role)) {
+                $job['opn_number'] = '[Integrity Check Failed]';
             } elseif (RBAC::canViewPlaintext($role)) {
                 // User sees plaintext, but sensitive OPN is hidden
                 $job['opn_number'] = '[Sensitive Data Hidden]';
