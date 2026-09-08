@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 $baseUrl = rtrim((string) (getenv('TEST_BASE_URL') ?: 'http://127.0.0.1'), '/');
 $cookieJar = tempnam(sys_get_temp_dir(), 'cipherdesk-cookies-');
+$adminCookieJar = tempnam(sys_get_temp_dir(), 'cipherdesk-admin-');
 $username = 'smoke_' . bin2hex(random_bytes(4));
 $password = 'Smoke-Test-Password-42';
 
@@ -95,15 +96,15 @@ try {
     smoke_check($forbiddenConfig['status'] === 403, 'configuration directory is not web-accessible');
 
     // Exercise the actual API boundary, not only Validator methods.
-    $adminPage = http_request('GET', $baseUrl . '/index.php', $cookieJar);
-    $adminLogin = http_request('POST', $baseUrl . '/index.php', $cookieJar, [
+    $adminPage = http_request('GET', $baseUrl . '/index.php', $adminCookieJar);
+    $adminLogin = http_request('POST', $baseUrl . '/index.php', $adminCookieJar, [
         'csrf_token' => csrf_from($adminPage['body']),
         'login' => '1',
         'username' => getenv('ADMIN_USERNAME') ?: 'admin',
         'password' => getenv('ADMIN_PASSWORD') ?: 'CI-Administrator-Password-42',
     ]);
     smoke_check($adminLogin['status'] === 302, 'administrator login succeeds');
-    $adminDashboard = http_request('GET', $baseUrl . '/dashboard.php', $cookieJar);
+    $adminDashboard = http_request('GET', $baseUrl . '/dashboard.php', $adminCookieJar);
     $csrf = csrf_from($adminDashboard['body']);
     foreach ([
         ['/api/register.php', ['username' => [], 'password' => $password, 'name' => 'Test User']],
@@ -112,15 +113,18 @@ try {
         ['/api/users.php', ['userid' => 1, 'role' => []]],
     ] as [$path, $payload]) {
         $method = $path === '/api/users.php' ? 'PATCH' : 'POST';
-        $result = http_request($method, $baseUrl . $path, $cookieJar, $payload, $csrf);
+        $result = http_request($method, $baseUrl . $path, $adminCookieJar, $payload, $csrf);
         smoke_check($result['status'] === 400, "$path rejects array fields");
         smoke_check(isset(json_decode($result['body'], true)['error']), "$path returns a JSON error");
     }
-    $logs = http_request('GET', $baseUrl . '/api/activity_logs.php?activity_type%5B%5D=LOGIN', $cookieJar);
+    $logs = http_request('GET', $baseUrl . '/api/activity_logs.php?activity_type%5B%5D=LOGIN', $adminCookieJar);
     smoke_check($logs['status'] === 400, 'activity logs reject array filters');
 
     fwrite(STDOUT, "HTTP smoke test passed.\n");
 } finally {
+    if (is_file($adminCookieJar)) {
+        unlink($adminCookieJar);
+    }
     if (is_file($cookieJar)) {
         unlink($cookieJar);
     }
