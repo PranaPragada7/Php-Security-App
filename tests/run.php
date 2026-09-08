@@ -67,6 +67,7 @@ $csrfToken = csrf_token();
 check(strlen($csrfToken) === 64, 'CSRF token has expected entropy');
 check(csrf_validate($csrfToken), 'CSRF token verifies');
 check(!csrf_validate(str_repeat('0', 64)), 'incorrect CSRF token is rejected');
+check(!csrf_validate([]), 'array-valued CSRF token is rejected');
 
 $_SESSION['session_id'] = 'server-side-session';
 $_SESSION['token'] = 'server-side-token';
