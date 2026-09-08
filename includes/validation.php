@@ -11,6 +11,9 @@ class Validator {
      * @return array ['valid' => bool, 'error' => string|null]
      */
     public static function validateUsername($username) {
+        if (!is_string($username)) {
+            return ['valid' => false, 'error' => 'Username must be a string'];
+        }
         if (empty($username)) {
             return ['valid' => false, 'error' => 'Username is required'];
         }
@@ -38,6 +41,9 @@ class Validator {
      * @return array ['valid' => bool, 'error' => string|null]
      */
     public static function validatePassword($password) {
+        if (!is_string($password)) {
+            return ['valid' => false, 'error' => 'Password must be a string'];
+        }
         if (empty($password)) {
             return ['valid' => false, 'error' => 'Password is required'];
         }
@@ -60,6 +66,9 @@ class Validator {
      * @return array ['valid' => bool, 'error' => string|null]
      */
     public static function validateJobName($job_name) {
+        if (!is_string($job_name)) {
+            return ['valid' => false, 'error' => 'Job name must be a string'];
+        }
         if (empty($job_name)) {
             return ['valid' => false, 'error' => 'Job name is required'];
         }
@@ -88,6 +97,9 @@ class Validator {
      * @return array ['valid' => bool, 'error' => string|null, 'value' => string]
      */
     public static function validateOpnNumber($opn_number) {
+        if (!is_string($opn_number)) {
+            return ['valid' => false, 'error' => 'OPN number must be a string', 'value' => ''];
+        }
         if (empty($opn_number)) {
             return ['valid' => false, 'error' => 'OPN number is required', 'value' => ''];
         }
@@ -111,6 +123,9 @@ class Validator {
      * @return array ['valid' => bool, 'error' => string|null]
      */
     public static function validateEmail($email) {
+        if (!is_string($email)) {
+            return ['valid' => false, 'error' => 'Email must be a string'];
+        }
         if (empty($email)) {
             return ['valid' => false, 'error' => 'Email is required'];
         }
@@ -134,6 +149,9 @@ class Validator {
      * @return array ['valid' => bool, 'error' => string|null]
      */
     public static function validateName($name) {
+        if (!is_string($name)) {
+            return ['valid' => false, 'error' => 'Name must be a string'];
+        }
         if (empty($name)) {
             return ['valid' => false, 'error' => 'Name is required'];
         }

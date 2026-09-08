@@ -84,4 +84,15 @@ check(str_contains($registerApi, '$role = RBAC::ROLE_USER;'), 'public registrati
 check(!str_contains($manageUsersPage, 'SESSION_TOKEN'), 'admin page does not expose session tokens');
 check(!str_contains($manageUsersPage, 'https://localhost'), 'admin API path is portable');
 
+foreach (['validateUsername', 'validatePassword', 'validateJobName', 'validateOpnNumber', 'validateEmail', 'validateName'] as $method) {
+    foreach ([[], ['bad'], (object) ['bad' => true], 42, 1.5, true, null] as $value) {
+        $result = Validator::$method($value);
+        check($result['valid'] === false, "$method rejects non-string input");
+        check(is_string($result['error']), "$method returns a validation message");
+        if ($method === 'validateOpnNumber') {
+            check($result['value'] === '', 'invalid OPN has an empty normalized value');
+        }
+    }
+}
+
 fwrite(STDOUT, sprintf("%d checks passed.%s", $tests, PHP_EOL));
