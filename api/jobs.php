@@ -78,6 +78,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $job_name = trim($input['job_name']);
     $opn_number = $opn_validation['value'];
+    if (array_key_exists('clear_text_data', $input) && !is_string($input['clear_text_data'])) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Description must be a string']);
+        exit;
+    }
     $clear_text_data = isset($input['clear_text_data']) ? trim($input['clear_text_data']) : '';
     
     // Validate clear_text_data length

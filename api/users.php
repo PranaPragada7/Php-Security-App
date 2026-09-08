@@ -100,6 +100,11 @@ try {
             exit;
         }
         
+        if (!is_string($input['role'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Role must be a string']);
+            exit;
+        }
         $target_userid = intval($input['userid']);
         $new_role = trim($input['role']);
         

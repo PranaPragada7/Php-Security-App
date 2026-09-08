@@ -50,6 +50,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    foreach (['username', 'password', 'name', 'email'] as $field) {
+        if (array_key_exists($field, $input) && !is_string($input[$field])) {
+            http_response_code(400);
+            echo json_encode(['error' => "$field must be a string"]);
+            exit;
+        }
+    }
     $username = trim($input['username']);
     $password = $input['password'];
     // Auto-generate email if not provided (email field removed from UI but DB requires it)
