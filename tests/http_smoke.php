@@ -6,7 +6,7 @@ $cookieJar = tempnam(sys_get_temp_dir(), 'cipherdesk-cookies-');
 $username = 'smoke_' . bin2hex(random_bytes(4));
 $password = 'Smoke-Test-Password-42';
 
-function http_request(string $method, string $url, string $cookieJar, array $form = []): array
+function http_request(string $method, string $url, string $cookieJar, array $form = [], ?string $csrf = null): array
 {
     $handle = curl_init($url);
     curl_setopt_array($handle, [
@@ -20,8 +20,10 @@ function http_request(string $method, string $url, string $cookieJar, array $for
     ]);
 
     if ($form !== []) {
-        curl_setopt($handle, CURLOPT_POSTFIELDS, http_build_query($form));
-        curl_setopt($handle, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+        curl_setopt($handle, CURLOPT_POSTFIELDS, $csrf === null ? http_build_query($form) : json_encode($form));
+        curl_setopt($handle, CURLOPT_HTTPHEADER, $csrf === null
+            ? ['Content-Type: application/x-www-form-urlencoded']
+            : ['Content-Type: application/json', 'X-CSRF-Token: ' . $csrf]);
     }
 
     $response = curl_exec($handle);
@@ -91,6 +93,31 @@ try {
 
     $forbiddenConfig = http_request('GET', $baseUrl . '/config/settings.example.php', $cookieJar);
     smoke_check($forbiddenConfig['status'] === 403, 'configuration directory is not web-accessible');
+
+    // Exercise the actual API boundary, not only Validator methods.
+    $adminPage = http_request('GET', $baseUrl . '/index.php', $cookieJar);
+    $adminLogin = http_request('POST', $baseUrl . '/index.php', $cookieJar, [
+        'csrf_token' => csrf_from($adminPage['body']),
+        'login' => '1',
+        'username' => getenv('ADMIN_USERNAME') ?: 'admin',
+        'password' => getenv('ADMIN_PASSWORD') ?: 'CI-Administrator-Password-42',
+    ]);
+    smoke_check($adminLogin['status'] === 302, 'administrator login succeeds');
+    $adminDashboard = http_request('GET', $baseUrl . '/dashboard.php', $cookieJar);
+    $csrf = csrf_from($adminDashboard['body']);
+    foreach ([
+        ['/api/register.php', ['username' => [], 'password' => $password, 'name' => 'Test User']],
+        ['/api/register.php', ['username' => 'valid_user', 'password' => $password, 'name' => 'Test User', 'email' => []]],
+        ['/api/jobs.php', ['job_name' => 'Test job', 'opn_number' => '12345', 'clear_text_data' => []]],
+        ['/api/users.php', ['userid' => 1, 'role' => []]],
+    ] as [$path, $payload]) {
+        $method = $path === '/api/users.php' ? 'PATCH' : 'POST';
+        $result = http_request($method, $baseUrl . $path, $cookieJar, $payload, $csrf);
+        smoke_check($result['status'] === 400, "$path rejects array fields");
+        smoke_check(isset(json_decode($result['body'], true)['error']), "$path returns a JSON error");
+    }
+    $logs = http_request('GET', $baseUrl . '/api/activity_logs.php?activity_type%5B%5D=LOGIN', $cookieJar);
+    smoke_check($logs['status'] === 400, 'activity logs reject array filters');
 
     fwrite(STDOUT, "HTTP smoke test passed.\n");
 } finally {

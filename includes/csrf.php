@@ -31,6 +31,9 @@ function csrf_token() {
  * @return bool True if valid, false otherwise
  */
 function csrf_validate($token) {
+    if (!is_string($token)) {
+        return false;
+    }
     csrf_init();
     if (!isset($_SESSION['csrf_token'])) {
         return false;

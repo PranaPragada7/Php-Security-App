@@ -30,6 +30,11 @@ if (!RBAC::canAccessActivityLogs($user['role'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    if (isset($_GET['activity_type']) && !is_string($_GET['activity_type'])) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Activity type must be a string']);
+        exit;
+    }
     // Whitelist activity_type for security
     $activity_type = isset($_GET['activity_type']) ? trim($_GET['activity_type']) : null;
     $allowedTypes = [
