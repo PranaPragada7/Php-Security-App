@@ -34,7 +34,6 @@ function http_request(string $method, string $url, string $cookieJar, array $for
 
     $status = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
     $headerSize = (int) curl_getinfo($handle, CURLINFO_HEADER_SIZE);
-    curl_close($handle);
 
     return [
         'status' => $status,
