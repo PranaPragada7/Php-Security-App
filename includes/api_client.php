@@ -57,7 +57,6 @@ function api_request(string $method, string $path, ?array $payload = null, array
     $body = curl_exec($handle);
     $status = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
     $curlError = curl_error($handle);
-    curl_close($handle);
 
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
