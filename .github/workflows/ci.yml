@@ -12,6 +12,10 @@ jobs:
   php-validation:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ["8.3", "8.5"]
 
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +23,7 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.3"
+          php-version: ${{ matrix.php-version }}
           extensions: curl, openssl, pdo_mysql
           coverage: none
 
