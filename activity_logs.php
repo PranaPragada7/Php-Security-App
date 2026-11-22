@@ -14,7 +14,11 @@ if (!isset($_SESSION['userid']) || !isset($_SESSION['session_id']) || !isset($_S
 
 require_once __DIR__ . '/includes/rbac.php';
 
-if (isset($_GET['logout'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
+    if (!logout_request_is_valid()) {
+        http_response_code(403);
+        exit('Security token validation failed.');
+    }
     logout_current_user();
     header('Location: index.php');
     exit;
@@ -25,6 +29,17 @@ $role = $_SESSION['role'] ?? 'guest';
 if (!RBAC::canAccessActivityLogs($role)) {
     header('Location: dashboard.php');
     exit;
+}
+
+foreach (['userid', 'limit', 'offset'] as $numericFilter) {
+    if (isset($_GET[$numericFilter]) && !is_string($_GET[$numericFilter])) {
+        http_response_code(400);
+        exit($numericFilter . ' must be a scalar value.');
+    }
+}
+if (isset($_GET['activity_type']) && !is_string($_GET['activity_type'])) {
+    http_response_code(400);
+    exit('Activity type must be a string.');
 }
 
 $filter_userid = isset($_GET['userid']) ? intval($_GET['userid']) : null;
@@ -101,7 +116,10 @@ if ($http_code === 200) {
                 </div>
                 <div class="flex items-center gap-4">
                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">ADMIN AREA</span>
-                    <a href="dashboard.php?logout=1" class="text-sm text-gray-400 hover:text-white transition-colors">Sign out</a>
+                    <form method="post" action="dashboard.php">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>">
+                        <button type="submit" name="logout" value="1" class="text-sm text-gray-400 hover:text-white transition-colors">Sign out</button>
+                    </form>
                 </div>
             </div>
         </div>

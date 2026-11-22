@@ -27,7 +27,7 @@ class AES {
      * @return string Encrypted data (IV + encrypted data, base64 encoded)
      */
     public function encrypt($data) {
-        if (empty($data)) {
+        if ($data === '' || $data === null) {
             return '';
         }
         
@@ -50,7 +50,7 @@ class AES {
      * @return string Decrypted data
      */
     public function decrypt($encrypted_data) {
-        if (empty($encrypted_data)) {
+        if ($encrypted_data === '' || $encrypted_data === null) {
             return '';
         }
         

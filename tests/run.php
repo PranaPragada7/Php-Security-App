@@ -13,6 +13,7 @@ require_once __DIR__ . '/../includes/validation.php';
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/request_auth.php';
+require_once __DIR__ . '/../includes/logout.php';
 
 $tests = 0;
 
@@ -35,6 +36,7 @@ $encryptedTwo = AES::_encrypt($plaintext);
 check($encryptedOne !== $plaintext, 'AES does not return plaintext');
 check($encryptedOne !== $encryptedTwo, 'AES uses a fresh IV');
 check(AES::_decrypt($encryptedOne) === $plaintext, 'AES round trip succeeds');
+check(AES::_decrypt(AES::_encrypt('0')) === '0', 'AES preserves the string zero');
 
 $invalidCiphertextRejected = false;
 try {
@@ -54,8 +56,13 @@ check(Validator::validateUsername('prana_7')['valid'], 'valid username accepted'
 check(!Validator::validateUsername('bad name')['valid'], 'username whitespace rejected');
 check(!Validator::validatePassword('short')['valid'], 'short password rejected');
 check(Validator::validatePassword('Correct-Horse-42')['valid'], 'strong-length password accepted');
+check(Validator::validatePassword(str_repeat('a', 72))['valid'], 'bcrypt boundary password accepted');
+check(!Validator::validatePassword(str_repeat('a', 73))['valid'], 'bcrypt ignored password suffix rejected');
+check(!Validator::validatePassword(str_repeat('é', 37))['valid'], 'password limit measures bytes, not characters');
+check(!Validator::validatePassword("Correct-Horse-42\0tail")['valid'], 'null byte password rejected before hashing');
 check(Validator::validateEmail('user@example.test')['valid'], 'reserved test email accepted');
 check(!Validator::validateJobName('<script>')['valid'], 'HTML-like job name rejected');
+check(Validator::validateOpnNumber('0')['valid'], 'zero is a valid nonempty OPN value');
 
 check(RBAC::canManageUsers(RBAC::ROLE_ADMIN), 'admin can manage users');
 check(!RBAC::canManageUsers(RBAC::ROLE_USER), 'standard user cannot manage users');
@@ -68,6 +75,19 @@ check(strlen($csrfToken) === 64, 'CSRF token has expected entropy');
 check(csrf_validate($csrfToken), 'CSRF token verifies');
 check(!csrf_validate(str_repeat('0', 64)), 'incorrect CSRF token is rejected');
 check(!csrf_validate([]), 'array-valued CSRF token is rejected');
+
+$_SERVER['REQUEST_METHOD'] = 'GET';
+$_GET['logout'] = '1';
+$_POST = ['logout' => '1', 'csrf_token' => $csrfToken];
+check(!logout_request_is_valid(), 'GET cannot log a user out');
+$_SERVER['REQUEST_METHOD'] = 'POST';
+check(logout_request_is_valid(), 'POST with valid CSRF authorizes logout');
+$_POST['csrf_token'] = str_repeat('0', 64);
+check(!logout_request_is_valid(), 'invalid CSRF cannot authorize logout');
+unset($_POST['csrf_token']);
+check(!logout_request_is_valid(), 'missing CSRF cannot authorize logout');
+$_POST = [];
+unset($_GET['logout']);
 
 $_SESSION['session_id'] = 'server-side-session';
 $_SESSION['token'] = 'server-side-token';
@@ -95,5 +115,24 @@ foreach (['validateUsername', 'validatePassword', 'validateJobName', 'validateOp
         }
     }
 }
+
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_POST = [
+    'register' => '1', 'csrf_token' => csrf_token(),
+    'username' => ['invalid'], 'name' => ['invalid'], 'password' => 'Correct-Horse-42',
+];
+ob_start();
+require __DIR__ . '/../register.php';
+$registrationHtml = ob_get_clean();
+check(str_contains($registrationHtml, 'Username must be a string'), 'registration form renders validation errors for array input');
+$_POST = [];
+
+check(Validator::parseUserId(42) === 42, 'integer user ID is accepted');
+check(Validator::parseUserId('42') === 42, 'numeric string user ID is accepted');
+foreach ([[], [42], true, 1.5, '42junk', 0, -1, null, PHP_INT_MAX . '0'] as $invalidUserId) {
+    check(Validator::parseUserId($invalidUserId) === null, 'malformed user ID is rejected without coercion');
+}
+
+require __DIR__ . '/rate_limit.php';
 
 fwrite(STDOUT, sprintf("%d checks passed.%s", $tests, PHP_EOL));

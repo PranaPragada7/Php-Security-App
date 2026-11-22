@@ -3,6 +3,14 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/csrf.php';
+
+function logout_request_is_valid(): bool
+{
+    return ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+        && isset($_POST['logout'])
+        && csrf_validate_request();
+}
 
 function logout_current_user(): void
 {

@@ -29,6 +29,11 @@ Public registration always creates a standard `user` account. Administrative
 access cannot be selected from the registration form or supplied through the
 registration API.
 
+Passwords must be 12 to 72 bytes and must not contain null bytes. The byte limit
+prevents bcrypt from silently ignoring a password suffix. Existing accounts
+created with a longer password need a password reset before using this policy.
+Administrators can reprovision their account with `scripts/create_admin.php`.
+
 ## Architecture
 
 ```text

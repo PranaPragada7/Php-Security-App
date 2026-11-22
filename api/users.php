@@ -12,6 +12,7 @@ require_once __DIR__ . '/../includes/rbac.php';
 require_once __DIR__ . '/../includes/logger.php';
 require_once __DIR__ . '/../includes/hmac.php';
 require_once __DIR__ . '/../includes/request_auth.php';
+require_once __DIR__ . '/../includes/validation.php';
 
 // Verify session and role
 try {
@@ -105,7 +106,12 @@ try {
             echo json_encode(['error' => 'Role must be a string']);
             exit;
         }
-        $target_userid = intval($input['userid']);
+        $target_userid = Validator::parseUserId($input['userid']);
+        if ($target_userid === null) {
+            http_response_code(400);
+            echo json_encode(['error' => 'User ID must be a positive integer']);
+            exit;
+        }
         $new_role = trim($input['role']);
         
         // Validate role
@@ -194,17 +200,18 @@ try {
         }
         
         // Parse ID from query string or body
-        $delete_id = isset($_GET['id']) ? intval($_GET['id']) : null;
-        
-        if (!$delete_id) {
+        $delete_id = null;
+        if (array_key_exists('id', $_GET)) {
+            $delete_id = Validator::parseUserId($_GET['id']);
+        } else {
             // Try to get from body if not in query string
             $input = json_decode(file_get_contents('php://input'), true);
-            $delete_id = isset($input['id']) ? intval($input['id']) : null;
+            $delete_id = is_array($input) ? Validator::parseUserId($input['id'] ?? null) : null;
         }
 
-        if (!$delete_id) {
+        if ($delete_id === null) {
             http_response_code(400);
-            echo json_encode(['error' => 'User ID is required']);
+            echo json_encode(['error' => 'User ID must be a positive integer']);
             exit;
         }
 

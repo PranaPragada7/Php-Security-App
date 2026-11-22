@@ -68,81 +68,82 @@ class RateLimiter {
      */
     public function checkLimit($action, $max_attempts, $window_seconds) {
         $ip = $this->getClientIp();
+        $transactionStarted = false;
         
         try {
-            // Get current rate limit record
+            $this->db->beginTransaction();
+            $transactionStarted = true;
+
+            // Materialize the row even on the first request. The upsert takes
+            // an InnoDB row lock, so competing requests for this key wait until
+            // the decision and increment below have committed.
+            $insert_stmt = $this->db->prepare("
+                INSERT INTO auth_rate_limits (ip, action, attempts, first_attempt_at, last_attempt_at)
+                VALUES (?, ?, 0, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE attempts = attempts
+            ");
+            $insert_stmt->execute([$ip, $action]);
+
             $stmt = $this->db->prepare("
                 SELECT attempts, first_attempt_at, last_attempt_at 
                 FROM auth_rate_limits 
                 WHERE ip = ? AND action = ?
+                FOR UPDATE
             ");
             $stmt->execute([$ip, $action]);
             $record = $stmt->fetch();
-            
-            if ($record) {
-                $first_attempt = strtotime($record['first_attempt_at']);
-                $now = time();
-                $elapsed = $now - $first_attempt;
-                
-                // Reset if window has passed
-                if ($elapsed >= $window_seconds) {
-                    // Delete old record
-                    $delete_stmt = $this->db->prepare("DELETE FROM auth_rate_limits WHERE ip = ? AND action = ?");
-                    $delete_stmt->execute([$ip, $action]);
-                    
-                    // Create new record
-                    $insert_stmt = $this->db->prepare("
-                        INSERT INTO auth_rate_limits (ip, action, attempts, first_attempt_at, last_attempt_at)
-                        VALUES (?, ?, 1, NOW(), NOW())
-                    ");
-                    $insert_stmt->execute([$ip, $action]);
-                    
-                    return [
-                        'allowed' => true,
-                        'remaining' => $max_attempts - 1,
-                        'reset_at' => $now + $window_seconds
-                    ];
-                }
-                
-                // Check if limit exceeded
-                if ($record['attempts'] >= $max_attempts) {
-                    $reset_at = $first_attempt + $window_seconds;
-                    return [
-                        'allowed' => false,
-                        'remaining' => 0,
-                        'reset_at' => $reset_at
-                    ];
-                }
-                
-                // Increment attempts
+            if (!$record) {
+                throw new PDOException('Rate limit record is unavailable');
+            }
+
+            $first_attempt = strtotime($record['first_attempt_at']);
+            $now = time();
+            $elapsed = $now - $first_attempt;
+
+            if ($elapsed >= $window_seconds) {
+                // Reset in place while retaining the same row lock. Deleting
+                // and reinserting would create an unnecessary first-row race.
                 $update_stmt = $this->db->prepare("
-                    UPDATE auth_rate_limits 
+                    UPDATE auth_rate_limits
+                    SET attempts = 1, first_attempt_at = NOW(), last_attempt_at = NOW()
+                    WHERE ip = ? AND action = ?
+                ");
+                $update_stmt->execute([$ip, $action]);
+                $result = [
+                    'allowed' => true,
+                    'remaining' => max(0, $max_attempts - 1),
+                    'reset_at' => $now + $window_seconds
+                ];
+            } elseif ($record['attempts'] >= $max_attempts) {
+                $result = [
+                    'allowed' => false,
+                    'remaining' => 0,
+                    'reset_at' => $first_attempt + $window_seconds
+                ];
+            } else {
+                $update_stmt = $this->db->prepare("
+                    UPDATE auth_rate_limits
                     SET attempts = attempts + 1, last_attempt_at = NOW()
                     WHERE ip = ? AND action = ?
                 ");
                 $update_stmt->execute([$ip, $action]);
-                
-                $remaining = $max_attempts - ($record['attempts'] + 1);
-                return [
+                $result = [
                     'allowed' => true,
-                    'remaining' => max(0, $remaining),
+                    'remaining' => max(0, $max_attempts - ($record['attempts'] + 1)),
                     'reset_at' => $first_attempt + $window_seconds
                 ];
-            } else {
-                // First attempt - create record
-                $insert_stmt = $this->db->prepare("
-                    INSERT INTO auth_rate_limits (ip, action, attempts, first_attempt_at, last_attempt_at)
-                    VALUES (?, ?, 1, NOW(), NOW())
-                ");
-                $insert_stmt->execute([$ip, $action]);
-                
-                return [
-                    'allowed' => true,
-                    'remaining' => $max_attempts - 1,
-                    'reset_at' => time() + $window_seconds
-                ];
             }
+
+            $this->db->commit();
+            return $result;
         } catch (PDOException $e) {
+            if ($transactionStarted && $this->db->inTransaction()) {
+                try {
+                    $this->db->rollBack();
+                } catch (PDOException $rollbackError) {
+                    error_log('Rate limit rollback error: ' . $rollbackError->getMessage());
+                }
+            }
             // Authentication throttling fails closed when persistence is unavailable.
             error_log("Rate limit check error: " . $e->getMessage());
             return [
@@ -161,6 +162,8 @@ class RateLimiter {
     public function resetLimit($action) {
         $ip = $this->getClientIp();
         try {
+            // DELETE acquires the same InnoDB row lock as checkLimit's upsert,
+            // and therefore waits for any in-flight decision on this key.
             $stmt = $this->db->prepare("DELETE FROM auth_rate_limits WHERE ip = ? AND action = ?");
             $stmt->execute([$ip, $action]);
         } catch (PDOException $e) {

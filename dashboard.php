@@ -14,7 +14,11 @@ if (!isset($_SESSION['userid']) || !isset($_SESSION['session_id']) || !isset($_S
 
 require_once __DIR__ . '/includes/rbac.php';
 
-if (isset($_GET['logout'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
+    if (!logout_request_is_valid()) {
+        http_response_code(403);
+        exit('Security token validation failed.');
+    }
     logout_current_user();
     header('Location: index.php');
     exit;
@@ -35,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_job'])) {
         $opn_number = $_POST['opn_number'] ?? '';
         $clear_text_data = $_POST['clear_text_data'] ?? '';
         
-        if (empty($job_name) || empty($opn_number)) {
+        if ($job_name === '' || $opn_number === '') {
             $error = 'Please enter both job name and OPN number';
         } else {
             $result = api_request('POST', 'jobs.php', [
@@ -130,7 +134,10 @@ $roleBadgeClass = $roleBadgeColors[$role] ?? 'bg-gray-100 text-gray-800';
                             <?php echo strtoupper(htmlspecialchars($role)); ?>
                         </span>
                     </div>
-                    <a href="?logout=1" class="text-sm text-gray-400 hover:text-white transition-colors">Sign out</a>
+                    <form method="post" action="dashboard.php">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>">
+                        <button type="submit" name="logout" value="1" class="text-sm text-gray-400 hover:text-white transition-colors">Sign out</button>
+                    </form>
                 </div>
             </div>
         </div>

@@ -5,6 +5,14 @@
  */
 
 class Validator {
+    public static function parseUserId($value): ?int {
+        if (!is_int($value) && !is_string($value)) {
+            return null;
+        }
+        $parsed = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        return $parsed === false ? null : $parsed;
+    }
+
     /**
      * Validate username
      * @param string $username
@@ -49,12 +57,16 @@ class Validator {
         }
         
         if (strlen($password) < 12) {
-            return ['valid' => false, 'error' => 'Password must be at least 12 characters'];
+            return ['valid' => false, 'error' => 'Password must be at least 12 bytes'];
         }
         
-        // Additional password strength checks (optional)
-        if (strlen($password) > 255) {
-            return ['valid' => false, 'error' => 'Password is too long'];
+        // PASSWORD_DEFAULT currently uses bcrypt, which only hashes 72 bytes.
+        // Reject longer input instead of silently accepting an ignored suffix.
+        if (strlen($password) > 72) {
+            return ['valid' => false, 'error' => 'Password must be no more than 72 bytes'];
+        }
+        if (str_contains($password, "\0")) {
+            return ['valid' => false, 'error' => 'Password must not contain null bytes'];
         }
         
         return ['valid' => true, 'error' => null];
@@ -100,7 +112,7 @@ class Validator {
         if (!is_string($opn_number)) {
             return ['valid' => false, 'error' => 'OPN number must be a string', 'value' => ''];
         }
-        if (empty($opn_number)) {
+        if ($opn_number === '') {
             return ['valid' => false, 'error' => 'OPN number is required', 'value' => ''];
         }
         
