@@ -37,7 +37,11 @@ if (!isset($_SESSION['userid']) || !isset($_SESSION['role']) || !RBAC::canManage
                     <a href="dashboard.php" class="hover:text-emerald-400 transition-colors">
                         <i class="fas fa-arrow-left mr-1"></i> Dashboard
                     </a>
-                    <button onclick="logout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition-colors font-medium text-sm">
+                    <form id="logoutForm" method="post" action="dashboard.php">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>">
+                        <input type="hidden" name="logout" value="1">
+                    </form>
+                    <button type="submit" form="logoutForm" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition-colors font-medium text-sm">
                         <i class="fas fa-sign-out-alt mr-2"></i>Logout
                     </button>
                 </div>
@@ -420,9 +424,6 @@ if (!isset($_SESSION['userid']) || !isset($_SESSION['role']) || !RBAC::canManage
             }, 5000);
         }
 
-        function logout() {
-            window.location.href = 'dashboard.php?logout=1';
-        }
     </script>
 </body>
 </html>

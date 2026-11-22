@@ -237,12 +237,12 @@ csrf_init(); // Ensure CSRF token is initialized for form
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>">
             <div class="form-group">
                 <label for="name">Full Name</label>
-                <input type="text" id="name" name="name" required value="<?php echo htmlspecialchars($_POST['name'] ?? ''); ?>" placeholder="John Doe">
+                <input type="text" id="name" name="name" required value="<?php echo htmlspecialchars(is_string($_POST['name'] ?? null) ? $_POST['name'] : ''); ?>" placeholder="John Doe">
             </div>
 
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" placeholder="jdoe">
+                <input type="text" id="username" name="username" required value="<?php echo htmlspecialchars(is_string($_POST['username'] ?? null) ? $_POST['username'] : ''); ?>" placeholder="jdoe">
             </div>
             
             <div class="form-group">

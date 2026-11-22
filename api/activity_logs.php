@@ -30,6 +30,13 @@ if (!RBAC::canAccessActivityLogs($user['role'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    foreach (['userid', 'limit', 'offset'] as $numericFilter) {
+        if (isset($_GET[$numericFilter]) && !is_string($_GET[$numericFilter])) {
+            http_response_code(400);
+            echo json_encode(['error' => "$numericFilter must be a scalar value"]);
+            exit;
+        }
+    }
     if (isset($_GET['activity_type']) && !is_string($_GET['activity_type'])) {
         http_response_code(400);
         echo json_encode(['error' => 'Activity type must be a string']);

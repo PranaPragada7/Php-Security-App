@@ -9,12 +9,13 @@ ServerSignature Off
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" "expr=%{HTTPS} == 'on'"
 </IfModule>
 
-<FilesMatch "(^\.|\.(?:env|ini|log|sql|key|crt|csr|bak|dist))$">
+<FilesMatch "(^\.|\.(?:env|ini|log|sql|key|crt|csr|bak|dist)$)">
     Require all denied
 </FilesMatch>
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(?:config|database|includes|scripts|ssl)(?:/|$) - [F,L,NC]
+    RewriteRule (^|/)\. - [F,L]
+    RewriteRule ^(?:config|database|includes|scripts|ssl|tests)(?:/|$) - [F,L,NC]
 </IfModule>
 

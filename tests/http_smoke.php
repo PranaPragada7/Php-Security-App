@@ -76,6 +76,12 @@ try {
     ]);
     smoke_check($registration['status'] === 200, 'registration request completes');
     smoke_check(str_contains($registration['body'], 'Account created successfully'), 'registration succeeds');
+    $malformedRegistration = http_request('POST', $baseUrl . '/register.php', $cookieJar, [
+        'csrf_token' => csrf_from($registration['body']), 'register' => '1',
+        'name' => ['invalid'], 'username' => ['invalid'], 'password' => $password,
+    ]);
+    smoke_check($malformedRegistration['status'] === 200, 'malformed registration renders without a server error');
+    smoke_check(str_contains($malformedRegistration['body'], 'Username must be a string'), 'malformed registration shows a validation error');
 
     $freshLoginPage = http_request('GET', $baseUrl . '/index.php', $cookieJar);
     $login = http_request('POST', $baseUrl . '/index.php', $cookieJar, [
@@ -90,9 +96,18 @@ try {
     $dashboard = http_request('GET', $baseUrl . '/dashboard.php', $cookieJar);
     smoke_check($dashboard['status'] === 200, 'authenticated dashboard loads');
     smoke_check(str_contains($dashboard['body'], 'CipherDesk'), 'dashboard branding is rendered');
+    $job = http_request('POST', $baseUrl . '/api/jobs.php', $cookieJar, [
+        'job_name' => 'Zero OPN record', 'opn_number' => '0',
+    ], csrf_from($dashboard['body']));
+    smoke_check($job['status'] === 201, 'zero OPN can be encrypted and saved');
+    $jobId = json_decode($job['body'], true)['jobid'];
 
     $forbiddenConfig = http_request('GET', $baseUrl . '/config/settings.example.php', $cookieJar);
     smoke_check($forbiddenConfig['status'] === 403, 'configuration directory is not web-accessible');
+    foreach (['/tests/run.php', '/tests/http_smoke.php', '/.git/config', '/.env'] as $privatePath) {
+        $privateResource = http_request('GET', $baseUrl . $privatePath, $cookieJar);
+        smoke_check($privateResource['status'] === 403, "$privatePath is not web-accessible");
+    }
 
     // Exercise the actual API boundary, not only Validator methods.
     $adminPage = http_request('GET', $baseUrl . '/index.php', $adminCookieJar);
@@ -105,11 +120,19 @@ try {
     smoke_check($adminLogin['status'] === 302, 'administrator login succeeds');
     $adminDashboard = http_request('GET', $baseUrl . '/dashboard.php', $adminCookieJar);
     $csrf = csrf_from($adminDashboard['body']);
+    $adminJobs = http_request('GET', $baseUrl . '/api/jobs.php', $adminCookieJar);
+    $savedJob = array_values(array_filter(
+        json_decode($adminJobs['body'], true)['jobs'],
+        static fn (array $row): bool => (string) $row['jobid'] === (string) $jobId
+    ));
+    smoke_check(count($savedJob) === 1 && $savedJob[0]['opn_number'] === '0', 'zero OPN decrypts intact');
+    smoke_check($savedJob[0]['hmac_verified'] === true, 'zero OPN retains valid integrity');
     foreach ([
         ['/api/register.php', ['username' => [], 'password' => $password, 'name' => 'Test User']],
         ['/api/register.php', ['username' => 'valid_user', 'password' => $password, 'name' => 'Test User', 'email' => []]],
         ['/api/jobs.php', ['job_name' => 'Test job', 'opn_number' => '12345', 'clear_text_data' => []]],
         ['/api/users.php', ['userid' => 1, 'role' => []]],
+        ['/api/users.php', ['userid' => [42], 'role' => 'user']],
     ] as [$path, $payload]) {
         $method = $path === '/api/users.php' ? 'PATCH' : 'POST';
         $result = http_request($method, $baseUrl . $path, $adminCookieJar, $payload, $csrf);
@@ -118,6 +141,29 @@ try {
     }
     $logs = http_request('GET', $baseUrl . '/api/activity_logs.php?activity_type%5B%5D=LOGIN', $adminCookieJar);
     smoke_check($logs['status'] === 400, 'activity logs reject array filters');
+    $logsPage = http_request('GET', $baseUrl . '/activity_logs.php?activity_type%5B%5D=LOGIN', $adminCookieJar);
+    smoke_check($logsPage['status'] === 400, 'activity log page rejects array filters');
+    foreach (['userid', 'limit', 'offset'] as $numericFilter) {
+        foreach (['/api/activity_logs.php', '/activity_logs.php'] as $logsPath) {
+            $invalidFilter = http_request('GET', $baseUrl . $logsPath . '?' . $numericFilter . '%5B%5D=42', $adminCookieJar);
+            smoke_check($invalidFilter['status'] === 400, 'activity logs reject array-valued numeric filters');
+        }
+    }
+    foreach (['/api/users.php', '/api/users.php?id%5B%5D=42'] as $deletePath) {
+        $invalidDelete = http_request('DELETE', $baseUrl . $deletePath, $adminCookieJar, ['id' => [42]], $csrf);
+        smoke_check($invalidDelete['status'] === 400, 'array ID cannot select a different user for deletion');
+    }
+
+    $getLogout = http_request('GET', $baseUrl . '/dashboard.php?logout=1', $cookieJar);
+    smoke_check($getLogout['status'] === 200, 'GET logout does not change the session');
+    $invalidLogout = http_request('POST', $baseUrl . '/dashboard.php', $cookieJar, ['logout' => '1']);
+    smoke_check($invalidLogout['status'] === 403, 'logout without CSRF is rejected');
+    $logout = http_request('POST', $baseUrl . '/dashboard.php', $cookieJar, [
+        'logout' => '1', 'csrf_token' => csrf_from($getLogout['body']),
+    ]);
+    smoke_check($logout['status'] === 302, 'valid logout redirects');
+    $revoked = http_request('GET', $baseUrl . '/api/jobs.php', $cookieJar);
+    smoke_check($revoked['status'] === 401, 'logout revokes access');
 
     fwrite(STDOUT, "HTTP smoke test passed.\n");
 } finally {
